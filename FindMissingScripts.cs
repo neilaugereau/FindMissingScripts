@@ -1,32 +1,89 @@
 // COPYRIGHT 2025  @Neil Augereau / github : neilaugereau
 using UnityEngine;
 using UnityEditor;
+using System.IO;
 
 public class MissingScriptsFinder
 {
-    [MenuItem("Tools/Find Missing Scripts In Scene")]
-    static void FindMissingScripts()
+    [MenuItem("Tools/Find Missing Scripts/In Scene")]
+    static void FindInScene()
     {
-        int missingCount = 0;
+        int count = CheckSceneObjects();
+        Debug.Log($"[Scene Scan] Missing scripts found: {count}");
+    }
+
+    [MenuItem("Tools/Find Missing Scripts/In Prefabs")]
+    static void FindInPrefabs()
+    {
+        int count = CheckAllPrefabs();
+        Debug.Log($"[Prefabs Scan] Missing scripts found: {count}");
+    }
+
+    [MenuItem("Tools/Find Missing Scripts/Everywhere")]
+    static void FindEverywhere()
+    {
+        int countScene = CheckSceneObjects();
+        int countPrefabs = CheckAllPrefabs();
+        Debug.Log($"[Full Scan] Scene: {countScene}, Prefabs: {countPrefabs}, Total: {countScene + countPrefabs}");
+    }
+
+    static int CheckSceneObjects()
+    {
+        int count = 0;
 
         foreach (GameObject go in GameObject.FindObjectsOfType<GameObject>())
         {
-            Component[] components = go.GetComponents<Component>();
-            for (int i = 0; i < components.Length; i++)
+            count += CheckGameObject(go);
+        }
+
+        return count;
+    }
+
+    static int CheckAllPrefabs()
+    {
+        int count = 0;
+        string[] prefabPaths = Directory.GetFiles("Assets", "*.prefab", SearchOption.AllDirectories);
+
+        foreach (string path in prefabPaths)
+        {
+            GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if (prefab != null)
             {
-                if (components[i] == null)
-                {
-                    string fullPath = GetGameObjectPath(go);
-                    Debug.LogWarning($"Missing script on: '{go.name}' at path: {fullPath}", go);
-                    missingCount++;
-                }
+                GameObject instance = PrefabUtility.InstantiatePrefab(prefab) as GameObject;
+                count += CheckGameObject(instance, path);
+                GameObject.DestroyImmediate(instance);
             }
         }
 
-        Debug.Log($"Search complete. Total missing scripts found: {missingCount}");
+        return count;
     }
 
-    // Builds the full path in the hierarchy (e.g. "Root/Child/Target")
+    static int CheckGameObject(GameObject go, string assetPath = "")
+    {
+        int count = 0;
+        Component[] components = go.GetComponents<Component>();
+
+        for (int i = 0; i < components.Length; i++)
+        {
+            if (components[i] == null)
+            {
+                string path = GetGameObjectPath(go);
+                if (!string.IsNullOrEmpty(assetPath))
+                    Debug.LogWarning($"[Prefab] Missing script in '{assetPath}' at: {path}", go);
+                else
+                    Debug.LogWarning($"[Scene] Missing script at: {path}", go);
+                count++;
+            }
+        }
+
+        foreach (Transform child in go.transform)
+        {
+            count += CheckGameObject(child.gameObject, assetPath);
+        }
+
+        return count;
+    }
+
     static string GetGameObjectPath(GameObject obj)
     {
         string path = obj.name;
